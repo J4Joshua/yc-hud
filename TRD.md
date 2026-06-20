@@ -28,6 +28,25 @@ Two control loops live here, carried over from the original design:
 - **Fast reflex loop (local, offline, several Hz):** `policy.act(observation) → drive`, behind one `Policy` interface so the VLA and the hand-coded controller are swappable. **Obstacle hard-stop sits ABOVE the policy and can always override it** — a learned net can never disable the safety stop.
 - **Slow supervisor loop (~1 Hz, optional):** logging, dashboard, optional Claude speech on arrival. Never blocks the reflex loop; degrades gracefully with no network.
 
+## 1.5 Sim–Real Contract — LOCK THIS FIRST (the #1 sim-to-real safeguard)
+The simulator and the real rover must speak the same language, or a policy trained in sim fails on hardware. Agreed formats:
+
+**Action** — two floats, each in range `[-1, 1]`:
+- `linear` — +1 full forward, 0 stop, −1 reverse
+- `angular` — +1 full left (CCW), 0 straight, −1 full right (CW)
+- The Jetson converts to differential wheels: `left = clamp(linear − angular)`, `right = clamp(linear + angular)`, then scales to the WAVE ROVER's command units. The **same `(linear, angular)`** is what the sim emits and what the rover consumes.
+- Control rate: rover accepts a new command at up to ~10 Hz (matches SmolVLA's ~7 Hz inference).
+
+**Observation:**
+- One RGB frame from the forward camera + a fixed instruction string `"drive to the person"`. No proprioceptive state initially (vision-dominant).
+- The **sim camera must match the real IMX219's viewpoint** — same mounting geometry. Measure on the rover and fill in:
+  - Camera height above floor: **___ cm**
+  - Camera tilt (down from horizontal): **___ °**
+  - Camera horizontal field of view: **~___ °** (check your IMX219 lens — standard is ~60–77°; wide-angle variants differ)
+- Exact pixel size fed to SmolVLA is handled in the data pipeline (LeRobot resizes); the contract is matching the *viewpoint*, not the pixel count. Confirm SmolVLA's expected input size with the model owner.
+
+**Owners:** you (hardware) fill the camera geometry above; the model owner confirms image size + that the action head is 2-D continuous.
+
 ## 2. Hardware BOM + status + power
 | Part | Role | Status / note |
 |---|---|---|
